@@ -6,7 +6,10 @@ const logger = getLogger(__filename);
 
 // We use a ringbuffer of keys so we can change them and still decode packets that were
 // encrypted with an old key.
-const keyRingSize = 8;
+// In the future when we dont rely on a globally shared we will actually use it. For
+// now set the size to 1 which means there is only a single key. This causes some
+// glitches when changing the key but its ok.
+const keyRingSize = 1;
 
 // We use a 96 bit IV for AES GCM. This is signalled in plain together with the
 // packet. See https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams
@@ -90,12 +93,45 @@ export default class E2EEcontext {
     /**
      * Sets the key to be used for E2EE.
      *
-     * @param {string} value - Value to be used as the new key.
+     * @param {string} value - Value to be used as the new key. May be empty to disable end-to-end encryption.
      */
     async setKey(value) {
-        const key = await this._deriveKey(value);
+        let key;
 
-        // TODO.
+        if (value) {
+            const encoder = new TextEncoder();
+
+            key = await this._deriveKey(encoder.encode(value));
+        } else {
+            key = false;
+        }
+        this._currentKeyIndex++;
+        this._cryptoKeyRing[this._currentKeyIndex % this.cryptoKeyRing.length] = key;
+    }
+
+    /**
+     * Derives a AES-GCM key with 256 bits from the input using PBKDF2
+     * The salt is configured in the constructor of this class.
+     * @param {Uint8Array} keyBytes - Value to derive key from
+     */
+    async _deriveKey(keyBytes) {
+        // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/importKey
+        const material = await crypto.subtle.importKey('raw', keyBytes,
+            'PBKDF2', false, [ 'deriveBits', 'deriveKey' ]);
+        const salt = new ArrayBuffer(16);
+
+        (new Uint8Array(salt)).fill(0); // TODO: actually derive from configured salt.
+
+        // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey#PBKDF2
+        return crypto.subtle.deriveKey({
+            name: 'PBKDF2',
+            salt,
+            iterations: 100000,
+            hash: 'SHA-256'
+        }, material, {
+            name: 'AES-GCM',
+            length: 256
+        }, false, [ 'encrypt', 'decrypt' ]);
     }
 
     /**
@@ -147,8 +183,11 @@ export default class E2EEcontext {
             });
         }
 
-        // TODO: define behaviour. Do not send unencrypted.
-        logger.error('Could not encrypt frame as there is no key.');
+        /* NOTE WELL:
+         * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
+         * This is ok for demo purposes but should not be done once this becomes more relied upon.
+         */
+        controller.enqueue(chunk);
     }
 
     /**
