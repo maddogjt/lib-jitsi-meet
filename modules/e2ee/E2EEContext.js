@@ -30,8 +30,6 @@ export default class E2EEcontext {
         const receiverStreams
             = kind === 'video' ? receiver.createEncodedVideoStreams() : receiver.createEncodedAudioStreams();
         const transform = new TransformStream({
-            flush() {}, // eslint-disable-line no-empty-function
-            start() {}, // eslint-disable-line no-empty-function
             transform: this._decodeFunction
         });
 
@@ -51,8 +49,6 @@ export default class E2EEcontext {
         const senderStreams
             = kind === 'video' ? sender.createEncodedVideoStreams() : sender.createEncodedAudioStreams();
         const transform = new TransformStream({
-            flush() {}, // eslint-disable-line no-empty-function
-            start() {}, // eslint-disable-line no-empty-function
             transform: this._encodeFunction
         });
 
