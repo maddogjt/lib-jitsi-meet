@@ -137,7 +137,7 @@ export default class E2EEcontext {
                 newUint8.set(new Uint8Array(chunk.data, 0, unencryptedBytes[chunk.type])); // copy first bytes.
                 newUint8.set(new Uint8Array(cipherText), unencryptedBytes[chunk.type]); // add ciphertext.
                 newUint8.set(new Uint8Array(iv), unencryptedBytes[chunk.type] + cipherText.byteLength); // append IV.
-                newUint8[unencryptedBytes + cipherText.byteLength + ivLength] = keyIndex; // set key index.
+                newUint8[unencryptedBytes[chunk.type] + cipherText.byteLength + ivLength] = keyIndex; // set key index.
 
                 chunk.data = newData;
 
@@ -163,7 +163,6 @@ export default class E2EEcontext {
 
         if (this._cryptoKeyRing[keyIndex]) {
             // TODO: use chunk.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
-            // (fixed in latest M83)
             const chunkType = (data[0] & 0x1) === 0 ? 'key' : 'delta'; // eslint-disable-line no-bitwise
             const iv = new Uint8Array(chunk.data, chunk.data.byteLength - ivLength - 1, ivLength);
             const cipherTextStart = unencryptedBytes[chunkType];
