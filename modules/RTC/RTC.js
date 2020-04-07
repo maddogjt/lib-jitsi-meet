@@ -505,6 +505,12 @@ export default class RTC extends Listenable {
         }
 
         // FIXME: We should rename iceConfig to pcConfig.
+
+        if (!isP2P && browser.supportsInsertableStreams()) {
+            iceConfig.forceEncodedAudioInsertableStreams = true;
+            iceConfig.forceEncodedVideoInsertableStreams = true;
+        }
+
         if (browser.supportsSdpSemantics()) {
             iceConfig.sdpSemantics = 'plan-b';
         }

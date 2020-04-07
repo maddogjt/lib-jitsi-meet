@@ -27,6 +27,7 @@ import IceFailedNotification
     from './modules/connectivity/IceFailedNotification';
 import ParticipantConnectionStatusHandler
     from './modules/connectivity/ParticipantConnectionStatus';
+import E2EEContext from './modules/e2ee/E2EEContext';
 import E2ePing from './modules/e2eping/e2eping';
 import Jvb121EventGenerator from './modules/event/Jvb121EventGenerator';
 import RecordingManager from './modules/recording/RecordingManager';
@@ -233,6 +234,10 @@ export default function JitsiConference(options) {
     this.videoSIPGWHandler = new VideoSIPGW(this.room);
     this.recordingManager = new RecordingManager(this.room);
     this._conferenceJoinAnalyticsEventSent = false;
+
+    if (browser.supportsInsertableStreams()) {
+        this._e2eeCtx = new E2EEContext({ salt: this.options.name });
+    }
 }
 
 // FIXME convert JitsiConference to ES6 - ASAP !
@@ -888,6 +893,8 @@ JitsiConference.prototype.getTranscriptionStatus = function() {
  * another video track in the conference.
  */
 JitsiConference.prototype.addTrack = function(track) {
+    // TODO: handle E2EE.
+
     if (track.isVideoTrack()) {
         // Ensure there's exactly 1 local video track in the conference.
         const localVideoTrack = this.rtc.getLocalVideoTrack();
@@ -1624,6 +1631,8 @@ JitsiConference.prototype.onDisplayNameChanged = function(jid, displayName) {
  * JitsiConference
  */
 JitsiConference.prototype.onRemoteTrackAdded = function(track) {
+    // TODO: handle E2EE
+
     if (track.isP2P && !this.isP2PActive()) {
         logger.info(
             'Trying to add remote P2P track, when not in P2P - IGNORED');
@@ -1710,6 +1719,8 @@ JitsiConference.prototype.onTransportInfo = function(session, transportInfo) {
  * @param {JitsiRemoteTrack} removedTrack
  */
 JitsiConference.prototype.onRemoteTrackRemoved = function(removedTrack) {
+    // TODO: handle E2EE.
+
     this.getParticipants().forEach(participant => {
         const tracks = participant.getTracks();
 
@@ -1837,6 +1848,7 @@ JitsiConference.prototype._acceptJvbIncomingCall = function(
             p2p: false,
             value: now
         }));
+    // TODO: pass e2ee context here?
     try {
         jingleSession.initialize(this.room, this.rtc, this.options.config);
     } catch (error) {
@@ -3268,4 +3280,20 @@ JitsiConference.prototype._sendConferenceJoinAnalyticsEvent = function() {
         participantId: `${meetingId}.${this._statsCurrentId}`
     }));
     this._conferenceJoinAnalyticsEventSent = true;
+};
+
+/**
+ * Sets the key to be used for End-To-End encryption.
+ *
+ * @param {string} key the key to be used.
+ * @returns {void}
+ */
+JitsiConference.prototype.setE2EEKey = function(key) {
+    if (!this._e2eeCtx) {
+        logger.warn('Cannot set E2EE key: there is no defined context, platform is likely unsupported.');
+
+        return;
+    }
+
+    this._e2eeCtx.setKey(key);
 };
