@@ -101,20 +101,95 @@ export default class E2EEcontext {
     /**
      * Function that will be injected in a stream and will encrypt the given chunks.
      *
-     * @param {TODO} chunk - Piece of data to be encoded.
-     * @param {TODO} controller - Handler for encoded chunks.
+     * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
+     * @param {TransformStreamDefaultController} controller - TransportStreamController.
      */
     _encodeFunction(chunk, controller) {
-        // TODO.
+        const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
+
+        if (this._cryptoKeyRing[keyIndex]) {
+            // construct IV akin https://tools.ietf.org/html/rfc7714#section-8.1
+            const iv = new ArrayBuffer(ivLength);
+            const ivView = new DataView(iv);
+
+            ivView.setUint32(0, chunk.synchronizationSource);
+            ivView.setUint32(4, chunk.timestamp);
+
+            // having to keep our own send count (similar to a picture id) is not ideal.
+            if (!this._sendCounts.has(chunk.synchronizationSource)) {
+                // Initialize with a random offset, similar to the RTP sequence number.
+                this._sendCounts.set(chunk.synchronizationSource, Math.floor(Math.random() * 0xFFFF));
+            }
+            const sendCount = this._sendCounts.get(chunk.synchronizationSource);
+
+            ivView.setUint32(8, sendCount % 0xFFFF);
+            this._sendCounts.set(chunk.synchronizationSource, sendCount + 1);
+
+            return crypto.subtle.encrypt({
+                name: 'AES-GCM',
+                iv
+            }, this._cryptoKeyRing[keyIndex], new Uint8Array(chunk.data, unencryptedBytes[chunk.type]))
+            .then(cipherText => {
+                const newData = new ArrayBuffer(unencryptedBytes[chunk.type] + cipherText.byteLength
+                    + iv.byteLength + 1);
+                const newUint8 = new Uint8Array(newData);
+
+                newUint8.set(new Uint8Array(chunk.data, 0, unencryptedBytes[chunk.type])); // copy first bytes.
+                newUint8.set(new Uint8Array(cipherText), unencryptedBytes[chunk.type]); // add ciphertext.
+                newUint8.set(new Uint8Array(iv), unencryptedBytes[chunk.type] + cipherText.byteLength); // append IV.
+                newUint8[unencryptedBytes + cipherText.byteLength + ivLength] = keyIndex; // set key index.
+
+                chunk.data = newData;
+
+                return controller.enqueue(chunk);
+            }, e => {
+                logger.error(e);
+            });
+        }
+
+        // TODO: define behaviour. Do not send unencrypted.
+        logger.error('Could not encrypt frame as there is no key.');
     }
 
     /**
      * Function that will be injected in a stream and will decrypt the given chunks.
      *
-     * @param {TODO} chunk - Piece of data to be decoded.
-     * @param {TODO} controller - Handler for decoded chunks.
+     * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
+     * @param {TransformStreamDefaultController} controller - TransportStreamController.
      */
     _decodeFunction(chunk, controller) {
-        // TODO.
+        const data = new Uint8Array(chunk.data);
+        const keyIndex = data[chunk.data.byteLength - 1];
+
+        if (this._cryptoKeyRing[keyIndex]) {
+            // TODO: use chunk.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
+            // (fixed in latest M83)
+            const chunkType = (data[0] & 0x1) === 0 ? 'key' : 'delta'; // eslint-disable-line no-bitwise
+            const iv = new Uint8Array(chunk.data, chunk.data.byteLength - ivLength - 1, ivLength);
+            const cipherTextStart = unencryptedBytes[chunkType];
+            const cipherTextLength = chunk.data.byteLength - (unencryptedBytes[chunkType] + ivLength + 1);
+
+            return crypto.subtle.decrypt({
+                name: 'AES-GCM',
+                iv
+            }, this._cryptoKeyRing[keyIndex], new Uint8Array(chunk.data, cipherTextStart, cipherTextLength))
+            .then(plainText => {
+                const newData = new ArrayBuffer(10 + plainText.byteLength);
+                const newUint8 = new Uint8Array(newData);
+
+                newUint8.set(new Uint8Array(chunk.data, 0, unencryptedBytes[chunkType]));
+                newUint8.set(new Uint8Array(plainText), unencryptedBytes[chunkType]);
+
+                chunk.data = newData;
+
+                return controller.enqueue(chunk);
+            }, e => {
+                logger.error(e);
+            });
+        }
+
+        // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
+        // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
+        controller.enqueue(chunk);
     }
 }
