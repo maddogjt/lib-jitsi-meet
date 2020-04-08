@@ -41,7 +41,8 @@ export default class E2EEcontext {
     /**
      * Build a new E2EE context instance, which will be used in a given conference.
      *
-     * @param {string} options.salt - Salt to be used for key deviation.
+     * @param {string} options.salt - Salt to be used for key deviation. We currently use
+     *      the MUC room name for this which has the same lifetime as this context.
      */
     constructor(options) {
         this._options = options;
@@ -98,7 +99,7 @@ export default class E2EEcontext {
     /**
      * Sets the key to be used for E2EE.
      *
-     * @param {string} value - Value to be used as the new key. May be empty to disable end-to-end encryption.
+     * @param {string} value - Value to be used as the new key. May be falsy to disable end-to-end encryption.
      */
     async setKey(value) {
         let key;
