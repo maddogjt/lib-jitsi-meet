@@ -264,6 +264,7 @@ export default class E2EEcontext {
      *    and these steps terminate.
      * 2) Determine the frame type in order to look up the number of unencrypted header bytes.
      * 2) Extract the 12-byte IV from its position near the end of the packet.
+     *    Note: the IV is treated as opaque and not reconstructed from the input.
      * 3) Decrypt the encrypted frame content after the unencrypted bytes using AES-GCM.
      * 4) Allocate space for the decrypted frame.
      * 5) Copy the unencrypted bytes from the start of the encrypted frame.
