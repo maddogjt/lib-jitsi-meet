@@ -178,6 +178,30 @@ export default class E2EEcontext {
      *
      * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
      * @param {TransformStreamDefaultController} controller - TransportStreamController.
+     *
+     * The packet format is described below. One of the design goals was to not require
+     * changes to the SFU which for video requires not encrypting the keyframe bit of VP8
+     * as SFUs need to detect a keyframe (framemarking or the generic frame descriptor will
+     * solve this eventually). This also "hides" that a client is using E2EE a bit.
+     *
+     * Note that this operates on the full frame, i.e. for VP8 the data described in
+     *   https://tools.ietf.org/html/rfc6386#section-9.1
+     *
+     * The VP8 payload descriptor described in
+     *   https://tools.ietf.org/html/rfc7741#section-4.2
+     * is part of the RTP packet and not part of the frame and is not controllable by us.
+     * This is fine as the SFU keeps having access to it for routing.
+     *
+     * The encrypted frame is formed as follows:
+     * 1) Leave the first (10, 3, 1) bytes unencrypted, depending on the frame type and kind.
+     * 2) Form the GCM IV for the frame as described above.
+     * 3) Encrypt the rest of the frame using AES-GCM.
+     * 4) Allocate space for the encrypted frame.
+     * 5) Copy the unencrypted bytes to the start of the encrypted frame.
+     * 6) Append the ciphertext to the encrypted frame.
+     * 7) Append the IV.
+     * 8) Append a single byte for the key identifier. TODO: we don't need all the bits.
+     * 9) Enqueue the encrypted frame for sending.
      */
     _encodeFunction(chunk, controller) {
         const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
@@ -219,6 +243,17 @@ export default class E2EEcontext {
      *
      * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
      * @param {TransformStreamDefaultController} controller - TransportStreamController.
+     *
+     * The decrypted frame is formed as follows:
+     * 1) Extract the key index from the last byte of the encrypted frame.
+     *    If there is no key associated with the key index, the frame is enqueued for decoding and these steps terminate.
+     * 2) Determine the frame type in order to look up the number of unencrypted header bytes.
+     * 2) Extract the 12-byte IV from its position near the end of the packet.
+     * 3) Decrypt the encrypted frame content after the unencrypted bytes using AES-GCM.
+     * 4) Allocate space for the decrypted frame.
+     * 5) Copy the unencrypted bytes from the start of the encrypted frame.
+     * 6) Append the plaintext to the decrypted frame.
+     * 7) Enqueue the decrypted frame for decoding.
      */
     _decodeFunction(chunk, controller) {
         const data = new Uint8Array(chunk.data);
