@@ -1848,6 +1848,7 @@ JitsiConference.prototype._acceptJvbIncomingCall = function(
             p2p: false,
             value: now
         }));
+
     // TODO: pass e2ee context here?
     try {
         jingleSession.initialize(this.room, this.rtc, this.options.config);
