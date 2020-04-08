@@ -188,9 +188,9 @@ export default class E2EEcontext {
     }
 
     /**
-     * Function that will be injected in a stream and will encrypt the given chunks.
+     * Function that will be injected in a stream and will encrypt the given encoded frames.
      *
-     * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
+     * @param {RTCEncodedVideoFrame|RTCEncodedAudioFrame} encodedFrame - Encoded video frame.
      * @param {TransformStreamDefaultController} controller - TransportStreamController.
      *
      * The packet format is described below. One of the design goals was to not require
@@ -217,29 +217,29 @@ export default class E2EEcontext {
      * 8) Append a single byte for the key identifier. TODO: we don't need all the bits.
      * 9) Enqueue the encrypted frame for sending.
      */
-    _encodeFunction(chunk, controller) {
+    _encodeFunction(encodedFrame, controller) {
         const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
 
         if (this._cryptoKeyRing[keyIndex]) {
-            const iv = this._makeIV(chunk.synchronizationSource, chunk.timestamp);
+            const iv = this._makeIV(encodedFrame.synchronizationSource, encodedFrame.timestamp);
 
             return crypto.subtle.encrypt({
                 name: 'AES-GCM',
                 iv
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(chunk.data, unencryptedBytes[chunk.type]))
+            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, unencryptedBytes[encodedFrame.type]))
             .then(cipherText => {
-                const newData = new ArrayBuffer(unencryptedBytes[chunk.type] + cipherText.byteLength
+                const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + cipherText.byteLength
                     + iv.byteLength + 1);
                 const newUint8 = new Uint8Array(newData);
 
-                newUint8.set(new Uint8Array(chunk.data, 0, unencryptedBytes[chunk.type])); // copy first bytes.
-                newUint8.set(new Uint8Array(cipherText), unencryptedBytes[chunk.type]); // add ciphertext.
-                newUint8.set(new Uint8Array(iv), unencryptedBytes[chunk.type] + cipherText.byteLength); // append IV.
-                newUint8[unencryptedBytes[chunk.type] + cipherText.byteLength + ivLength] = keyIndex; // set key index.
+                newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])); // copy first bytes.
+                newUint8.set(new Uint8Array(cipherText), unencryptedBytes[encodedFrame.type]); // add ciphertext.
+                newUint8.set(new Uint8Array(iv), unencryptedBytes[encodedFrame.type] + cipherText.byteLength); // append IV.
+                newUint8[unencryptedBytes[encodedFrame.type] + cipherText.byteLength + ivLength] = keyIndex; // set key index.
 
-                chunk.data = newData;
+                encodedFrame.data = newData;
 
-                return controller.enqueue(chunk);
+                return controller.enqueue(encodedFrame);
             }, e => {
                 logger.error(e);
             });
@@ -249,13 +249,13 @@ export default class E2EEcontext {
          * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
          * This is ok for demo purposes but should not be done once this becomes more relied upon.
          */
-        controller.enqueue(chunk);
+        controller.enqueue(encodedFrame);
     }
 
     /**
-     * Function that will be injected in a stream and will decrypt the given chunks.
+     * Function that will be injected in a stream and will decrypt the given encoded frames.
      *
-     * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
+     * @param {RTCEncodedVideoFrame|RTCEncodedAudioFrame} encodedFrame - Encoded video frame.
      * @param {TransformStreamDefaultController} controller - TransportStreamController.
      *
      * The decrypted frame is formed as follows:
@@ -271,33 +271,33 @@ export default class E2EEcontext {
      * 6) Append the plaintext to the decrypted frame.
      * 7) Enqueue the decrypted frame for decoding.
      */
-    _decodeFunction(chunk, controller) {
-        const data = new Uint8Array(chunk.data);
-        const keyIndex = data[chunk.data.byteLength - 1];
+    _decodeFunction(encodedFrame, controller) {
+        const data = new Uint8Array(encodedFrame.data);
+        const keyIndex = data[encodedFrame.data.byteLength - 1];
 
         if (this._cryptoKeyRing[keyIndex]) {
-            // TODO: use chunk.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
-            const chunkType = chunk.type
+            // TODO: use encodedFrame.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
+            const encodedFrameType = encodedFrame.type
                 ? (data[0] & 0x1) === 0 ? 'key' : 'delta' // eslint-disable-line no-bitwise
                 : undefined;
-            const iv = new Uint8Array(chunk.data, chunk.data.byteLength - ivLength - 1, ivLength);
-            const cipherTextStart = unencryptedBytes[chunkType];
-            const cipherTextLength = chunk.data.byteLength - (unencryptedBytes[chunkType] + ivLength + 1);
+            const iv = new Uint8Array(encodedFrame.data, encodedFrame.data.byteLength - ivLength - 1, ivLength);
+            const cipherTextStart = unencryptedBytes[encodedFrameType];
+            const cipherTextLength = encodedFrame.data.byteLength - (unencryptedBytes[encodedFrameType] + ivLength + 1);
 
             return crypto.subtle.decrypt({
                 name: 'AES-GCM',
                 iv
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(chunk.data, cipherTextStart, cipherTextLength))
+            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, cipherTextStart, cipherTextLength))
             .then(plainText => {
-                const newData = new ArrayBuffer(unencryptedBytes[chunkType] + plainText.byteLength);
+                const newData = new ArrayBuffer(unencryptedBytes[encodedFrameType] + plainText.byteLength);
                 const newUint8 = new Uint8Array(newData);
 
-                newUint8.set(new Uint8Array(chunk.data, 0, unencryptedBytes[chunkType]));
-                newUint8.set(new Uint8Array(plainText), unencryptedBytes[chunkType]);
+                newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrameType]));
+                newUint8.set(new Uint8Array(plainText), unencryptedBytes[encodedFrameType]);
 
-                chunk.data = newData;
+                encodedFrame.data = newData;
 
-                return controller.enqueue(chunk);
+                return controller.enqueue(encodedFrame);
             }, e => {
                 logger.error(e);
             });
@@ -305,6 +305,6 @@ export default class E2EEcontext {
 
         // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
         // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
-        controller.enqueue(chunk);
+        controller.enqueue(encodedFrame);
     }
 }
