@@ -212,7 +212,7 @@ export default class E2EEcontext {
                 iv
             }, this._cryptoKeyRing[keyIndex], new Uint8Array(chunk.data, cipherTextStart, cipherTextLength))
             .then(plainText => {
-                const newData = new ArrayBuffer(10 + plainText.byteLength);
+                const newData = new ArrayBuffer(unencryptedBytes[chunkType] + plainText.byteLength);
                 const newUint8 = new Uint8Array(newData);
 
                 newUint8.set(new Uint8Array(chunk.data, 0, unencryptedBytes[chunkType]));
