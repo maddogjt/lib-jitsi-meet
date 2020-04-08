@@ -22,6 +22,8 @@ const ivLength = 12;
 // and is also a bit easier for the VP8 decoder (i.e. it generates funny garbage pictures
 // instead of being unable to decode).
 // This is a bit for show and we might want to reduce to 1 unconditionally in the final version.
+// TODO: handle audio, for opus this would be the TOC byte:
+//   https://tools.ietf.org/html/rfc6716#section-3.1
 const unencryptedBytes = {
     key: 10,
     delta: 3
