@@ -135,6 +135,45 @@ export default class E2EEcontext {
     }
 
     /**
+     * Construct the IV used for AES-GCM and sent (in plain) with the packet similar to
+     * https://tools.ietf.org/html/rfc7714#section-8.1
+     * It concatenates
+     * - the 32 bit synchronization source (SSRC) given on the encoded frame,
+     * - the 32 bit rtp timestamp given on the encoded frame,
+     * - a send counter that is specific to the SSRC. Starts at a random number.
+     * The send counter is essentially the pictureId but we currently have to implement this ourselves. 
+     * There is no XOR with a salt. Note that this IV leaks the SSRC to the receiver but since this is
+     * randomly generated and SFUs may not rewrite this is considered acceptable.
+     * The SSRC is used to allow demultiplexing multiple streams with the same key, as described in
+     *   https://tools.ietf.org/html/rfc3711#section-4.1.1
+     * The RTP timestamp is 32 bits and advances by the codec clock rate (90khz for video, 48khz for
+     * opus audio) every second. For video it rolls over roughly every 13 hours.
+     * The send counter will advance at the frame rate (30fps for video, 50fps for 20ms opus audio)
+     * every second. It will take a long time to roll over.
+     *
+     * See also https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams
+     */
+    _makeIV(synchronizationSource, timestamp) {
+        const iv = new ArrayBuffer(ivLength);
+        const ivView = new DataView(iv);
+
+        // having to keep our own send count (similar to a picture id) is not ideal.
+        if (!this._sendCounts.has(synchronizationSource)) {
+            // Initialize with a random offset, similar to the RTP sequence number.
+            this._sendCounts.set(synchronizationSource, Math.floor(Math.random() * 0xFFFF));
+        }
+        const sendCount = this._sendCounts.get(synchronizationSource);
+
+        ivView.setUint32(0, synchronizationSource);
+        ivView.setUint32(4, timestamp);
+        ivView.setUint32(8, sendCount % 0xFFFF);
+
+        this._sendCounts.set(synchronizationSource, sendCount + 1);
+
+        return iv;
+    }
+
+    /**
      * Function that will be injected in a stream and will encrypt the given chunks.
      *
      * @param {RTCEncodedVideoFrame} chunk - Encoded video frame.
@@ -144,22 +183,7 @@ export default class E2EEcontext {
         const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
 
         if (this._cryptoKeyRing[keyIndex]) {
-            // construct IV akin https://tools.ietf.org/html/rfc7714#section-8.1
-            const iv = new ArrayBuffer(ivLength);
-            const ivView = new DataView(iv);
-
-            ivView.setUint32(0, chunk.synchronizationSource);
-            ivView.setUint32(4, chunk.timestamp);
-
-            // having to keep our own send count (similar to a picture id) is not ideal.
-            if (!this._sendCounts.has(chunk.synchronizationSource)) {
-                // Initialize with a random offset, similar to the RTP sequence number.
-                this._sendCounts.set(chunk.synchronizationSource, Math.floor(Math.random() * 0xFFFF));
-            }
-            const sendCount = this._sendCounts.get(chunk.synchronizationSource);
-
-            ivView.setUint32(8, sendCount % 0xFFFF);
-            this._sendCounts.set(chunk.synchronizationSource, sendCount + 1);
+            const iv = this._makeIV(chunk.synchronizationSource, chunk.timestamp);
 
             return crypto.subtle.encrypt({
                 name: 'AES-GCM',
