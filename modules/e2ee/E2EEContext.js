@@ -35,6 +35,12 @@ const unencryptedBytes = {
  * This uses the WebRTC Insertable Streams API which is explained in
  *   https://github.com/alvestrand/webrtc-media-streams/blob/master/explainer.md
  * that provides access to the encoded frames and allows them to be transformed.
+ *
+ * The encoded frame format is explained below in the _encodeFunction method.
+ * High level design goals were:.
+ * - do not require changes to existing SFUs and retain (VP8) metadata.
+ * - allow the SFU to rewrite SSRCs, timestamp, pictureId.
+ * - allow for the key to be rotated frequently.
  */
 export default class E2EEcontext {
 
