@@ -22,11 +22,13 @@ const ivLength = 12;
 // and is also a bit easier for the VP8 decoder (i.e. it generates funny garbage pictures
 // instead of being unable to decode).
 // This is a bit for show and we might want to reduce to 1 unconditionally in the final version.
-// TODO: handle audio, for opus this would be the TOC byte:
+//
+// For audio (where frame.type is not set) we do not encrypt the opus TOC byte:
 //   https://tools.ietf.org/html/rfc6716#section-3.1
 const unencryptedBytes = {
     key: 10,
-    delta: 3
+    delta: 3,
+    undefined: 1 // frame.type is not set on audio
 };
 
 
@@ -274,7 +276,9 @@ export default class E2EEcontext {
 
         if (this._cryptoKeyRing[keyIndex]) {
             // TODO: use chunk.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
-            const chunkType = (data[0] & 0x1) === 0 ? 'key' : 'delta'; // eslint-disable-line no-bitwise
+            const chunkType = chunk.type
+                ? (data[0] & 0x1) === 0 ? 'key' : 'delta' // eslint-disable-line no-bitwise
+                : undefined;
             const iv = new Uint8Array(chunk.data, chunk.data.byteLength - ivLength - 1, ivLength);
             const cipherTextStart = unencryptedBytes[chunkType];
             const cipherTextLength = chunk.data.byteLength - (unencryptedBytes[chunkType] + ivLength + 1);
