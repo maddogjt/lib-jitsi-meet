@@ -29,7 +29,10 @@ const unencryptedBytes = {
 
 
 /**
- * Context encapsulating the crypt required for E2EE.
+ * Context encapsulating the cryptography bits required for E2EE.
+ * This uses the WebRTC Insertable Streams API which is explained in
+ *   https://github.com/alvestrand/webrtc-media-streams/blob/master/explainer.md
+ * that provides access to the encoded frames and allows them to be transformed.
  */
 export default class E2EEcontext {
 
