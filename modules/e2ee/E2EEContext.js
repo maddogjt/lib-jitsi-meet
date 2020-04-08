@@ -147,7 +147,7 @@ export default class E2EEcontext {
      * - the 32 bit synchronization source (SSRC) given on the encoded frame,
      * - the 32 bit rtp timestamp given on the encoded frame,
      * - a send counter that is specific to the SSRC. Starts at a random number.
-     * The send counter is essentially the pictureId but we currently have to implement this ourselves. 
+     * The send counter is essentially the pictureId but we currently have to implement this ourselves.
      * There is no XOR with a salt. Note that this IV leaks the SSRC to the receiver but since this is
      * randomly generated and SFUs may not rewrite this is considered acceptable.
      * The SSRC is used to allow demultiplexing multiple streams with the same key, as described in
@@ -252,7 +252,8 @@ export default class E2EEcontext {
      *
      * The decrypted frame is formed as follows:
      * 1) Extract the key index from the last byte of the encrypted frame.
-     *    If there is no key associated with the key index, the frame is enqueued for decoding and these steps terminate.
+     *    If there is no key associated with the key index, the frame is enqueued for decoding
+     *    and these steps terminate.
      * 2) Determine the frame type in order to look up the number of unencrypted header bytes.
      * 2) Extract the 12-byte IV from its position near the end of the packet.
      * 3) Decrypt the encrypted frame content after the unencrypted bytes using AES-GCM.
